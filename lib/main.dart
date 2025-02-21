@@ -3,10 +3,29 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_qr_scan/helper/check_link_type.dart';
 import 'package:flutter_qr_scan/video_player.dart';
+import 'package:flutter_qr_scan/audio_player.dart'; // Add this line to import AudioPlayerScreen
 import 'package:qr_code_scanner_plus/qr_code_scanner_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
-void main() => runApp(const MaterialApp(home: MyHome()));
+void main() => runApp((const MyApp()));
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'Ruang Ngaji Kita - QR Scanner',
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+      ),
+      home: const MyHome(),
+    );
+  }
+}
 
 class MyHome extends StatelessWidget {
   const MyHome({super.key});
@@ -14,7 +33,7 @@ class MyHome extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Flutter Demo Home Page')),
+      appBar: AppBar(title: const Text('Ruang Ngaji Kita - QR Scanner')),
       body: Center(
         child: ElevatedButton(
           onPressed: () {
@@ -40,6 +59,7 @@ class _QRViewExampleState extends State<QRViewExample> {
   Barcode? result;
   QRViewController? controller;
   final GlobalKey qrKey = GlobalKey(debugLabel: 'QR');
+  bool isProcessing = false;
 
   // In order to get hot reload to work we need to pause the camera if the platform
   // is android, or resume the camera if the platform is iOS.
@@ -60,18 +80,14 @@ class _QRViewExampleState extends State<QRViewExample> {
           Expanded(flex: 4, child: _buildQrView(context)),
           Expanded(
             flex: 1,
-            child: FittedBox(
-              fit: BoxFit.contain,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: <Widget>[
-                  if (result != null)
-                    Text(
-                        // ignore: deprecated_member_use
-                        'Barcode Type: ${describeEnum(result!.format)}   Data: ${result!.code}')
-                  else
-                    const Text('Scan a code'),
-                ],
+            child: Center(
+              child: Text(
+                result != null
+                    ? 'Hasil Code: ${result!.code}\nFormat: ${describeEnum(result!.format)}'
+                    : 'Scan a QR code',
+                textAlign: TextAlign.center,
+                style:
+                    const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
             ),
           )
@@ -92,7 +108,7 @@ class _QRViewExampleState extends State<QRViewExample> {
       key: qrKey,
       onQRViewCreated: _onQRViewCreated,
       overlay: QrScannerOverlayShape(
-          borderColor: Colors.red,
+          borderColor: Colors.blue,
           borderRadius: 10,
           borderLength: 30,
           borderWidth: 10,
@@ -105,18 +121,55 @@ class _QRViewExampleState extends State<QRViewExample> {
     setState(() {
       this.controller = controller;
     });
-    controller.scannedDataStream.listen((scanData) {
-      // Periksa apakah hasil scan adalah URL video
-      if (scanData.code != null && scanData.code!.startsWith('http')) {
-        controller.pauseCamera();
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => VideoPlayerScreen(videoUrl: scanData.code!),
-          ),
-        ).then((_) {
-          controller.resumeCamera(); // Resume kamera jika kembali
-        });
+    controller.scannedDataStream.listen((scanData) async {
+      if (isProcessing) return; // Mencegah pemrosesan ulang
+      isProcessing =
+          true; // Set flag ke true untuk mencegah pemrosesan berulang
+
+      setState(() {
+        result = scanData;
+      });
+
+      String? scannedCode = result?.code;
+      if (scannedCode != null) {
+        print('Hasil Scan: $scannedCode');
+
+        if (scannedCode.startsWith('http')) {
+          bool isMp4 = await isMp4File(scannedCode);
+          if (isMp4) {
+            controller.pauseCamera();
+            await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => VideoPlayerScreen(videoUrl: scannedCode),
+              ),
+            );
+            isProcessing =
+                false; // Reset flag setelah kembali dari VideoPlayerScreen
+            controller.resumeCamera();
+          } else if (scannedCode.endsWith('.mp3')) {
+            controller.pauseCamera();
+            await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => AudioPlayerScreen(audioUrl: scannedCode),
+              ),
+            );
+            isProcessing =
+                false; // Jika bukan video, reset flag agar bisa scan ulang
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content:
+                    Text('Error: Format tidak didukung. Silakan scan ulang.'),
+                backgroundColor: Colors.red,
+              ),
+            );
+            Navigator.pop(context);
+          }
+        }
+      } else {
+        isProcessing = false;
       }
     });
   }
