@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_qr_scan/helper/check_link_type.dart';
 import 'package:flutter_qr_scan/video_player.dart';
 import 'package:flutter_qr_scan/audio_player.dart'; // Add this line to import AudioPlayerScreen
+import 'package:permission_handler/permission_handler.dart';
 import 'package:qr_code_scanner_plus/qr_code_scanner_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -60,6 +61,7 @@ class _QRViewExampleState extends State<QRViewExample> {
   QRViewController? controller;
   final GlobalKey qrKey = GlobalKey(debugLabel: 'QR');
   bool isProcessing = false;
+  bool isCameraPermissionGranted = false;
 
   // In order to get hot reload to work we need to pause the camera if the platform
   // is android, or resume the camera if the platform is iOS.
@@ -73,26 +75,53 @@ class _QRViewExampleState extends State<QRViewExample> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    _checkCameraPermission();
+  }
+
+  Future<void> _checkCameraPermission() async {
+    var status = await Permission.camera.status;
+    if (!status.isGranted) {
+      status = await Permission.camera.request();
+    }
+
+    if (status.isGranted) {
+      setState(() {
+        isCameraPermissionGranted = true;
+      });
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Izin kamera ditolak, tidak bisa memindai QR.')),
+      );
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Column(
-        children: <Widget>[
-          Expanded(flex: 4, child: _buildQrView(context)),
-          Expanded(
-            flex: 1,
-            child: Center(
-              child: Text(
-                result != null
-                    ? 'Hasil Code: ${result!.code}\nFormat: ${describeEnum(result!.format)}'
-                    : 'Scan a QR code',
-                textAlign: TextAlign.center,
-                style:
-                    const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-            ),
-          )
-        ],
-      ),
+      body: isCameraPermissionGranted
+          ? Column(
+              children: <Widget>[
+                Expanded(flex: 4, child: _buildQrView(context)),
+                Expanded(
+                  flex: 1,
+                  child: Center(
+                    child: Text(
+                      result != null
+                          ? 'Hasil Code: ${result!.code}\nFormat: ${describeEnum(result!.format)}'
+                          : 'Scan a QR code',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+              ],
+            )
+          : const Center(
+              child: CircularProgressIndicator()), // Loading indikator
     );
   }
 
